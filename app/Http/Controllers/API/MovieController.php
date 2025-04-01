@@ -27,16 +27,30 @@ class MovieController extends BaseController
             'title' => 'required|string',
             'year' => 'required|integer',
             'genre' => 'required|string',
-            'file' => 'required|string',
+            'file' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
             'movie_length' => 'required|numeric'
         ]);
 
-        $movie = Movie::create($request->all());
-        // Transform the movie to include full S3 URL
-        if ($movie->file) {
-            $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $path = $file->storeAs('movies/posters', $fileName, 's3');
+            Storage::disk('s3')->setVisibility($path, 'public');
+
+            $movie = Movie::create([
+                'title' => $request->title,
+                'year' => $request->year,
+                'genre' => $request->genre,
+                'file' => $path,
+                'movie_length' => $request->movie_length
+            ]);
+
+            if ($movie->file) {
+                $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
+            }
+            return $this->sendResponse($movie, 'Movie created successfully');
         }
-        return $this->sendResponse($movie, 'Movie created successfully');
+        return $this->sendError('Movie poster is required');
     }
 
     public function show($id)
@@ -58,7 +72,7 @@ class MovieController extends BaseController
             'title' => 'string',
             'year' => 'integer',
             'genre' => 'string',
-            'file' => 'string',
+            'file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
             'movie_length' => 'numeric'
         ]);
 
@@ -67,8 +81,28 @@ class MovieController extends BaseController
             return $this->sendError('Movie not found');
         }
 
-        $movie->update($request->all());
-        // Transform the movie to include full S3 URL
+        // Handle file upload if new file is provided
+        if ($request->hasFile('file')) {
+            // Delete old file
+            if ($movie->file) {
+                Storage::disk('s3')->delete($movie->file);
+            }
+
+            // Upload new file
+            $file = $request->file('file');
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $path = $file->storeAs('movies/posters', $fileName, 's3');
+            Storage::disk('s3')->setVisibility($path, 'public');
+            $movie->file = $path;
+        }
+
+        $movie->update([
+            'title' => $request->title ?? $movie->title,
+            'year' => $request->year ?? $movie->year,
+            'genre' => $request->genre ?? $movie->genre,
+            'movie_length' => $request->movie_length ?? $movie->movie_length
+        ]);
+
         if ($movie->file) {
             $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
         }
@@ -80,6 +114,11 @@ class MovieController extends BaseController
         $movie = Movie::find($id);
         if (is_null($movie)) {
             return $this->sendError('Movie not found');
+        }
+
+        // Delete file from S3
+        if ($movie->file) {
+            Storage::disk('s3')->delete($movie->file);
         }
 
         $movie->delete();
