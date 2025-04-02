@@ -23,15 +23,16 @@ class MovieController extends BaseController
 
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string',
-            'year' => 'required|integer',
-            'genre' => 'required|string',
-            'file' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
-            'movie_length' => 'required|numeric'
-        ]);
+        try {
+            $request->validate([
+                'title' => 'required|string',
+                'year' => 'required|integer',
+                'genre' => 'required|string',
+                'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg',
+                'movie_length' => 'required|numeric'
+            ]);
 
-        if ($request->hasFile('file')) {
+            // Handle file upload
             $file = $request->file('file');
             $fileName = time() . '_' . $file->getClientOriginalName();
             $path = $file->storeAs('movies/posters', $fileName, 's3');
@@ -39,18 +40,25 @@ class MovieController extends BaseController
 
             $movie = Movie::create([
                 'title' => $request->title,
-                'year' => $request->year,
+                'year' => (int)$request->year,
                 'genre' => $request->genre,
-                'file' => $path,
-                'movie_length' => $request->movie_length
+                'movie_length' => (float)$request->movie_length,
+                'file' => $path
             ]);
 
             if ($movie->file) {
                 $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
             }
+
             return $this->sendResponse($movie, 'Movie created successfully');
+        } catch (\Exception $e) {
+            \Log::error('Movie creation error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error creating movie',
+                'errors' => $e instanceof \Illuminate\Validation\ValidationException ? $e->errors() : [$e->getMessage()]
+            ], 422);
         }
-        return $this->sendError('Movie poster is required');
     }
 
     public function show($id)
@@ -68,45 +76,88 @@ class MovieController extends BaseController
 
     public function update(Request $request, $id)
     {
-        $request->validate([
-            'title' => 'string',
-            'year' => 'integer',
-            'genre' => 'string',
-            'file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
-            'movie_length' => 'numeric'
-        ]);
+        try {
+            \Log::info('Update request received:', [
+                'id' => $id,
+                'request' => $request->all(),
+                'files' => $request->hasFile('file') ? 'yes' : 'no'
+            ]);
 
-        $movie = Movie::find($id);
-        if (is_null($movie)) {
-            return $this->sendError('Movie not found');
-        }
+            $request->validate([
+                'title' => 'required|string',
+                'year' => 'required|integer',
+                'genre' => 'required|string',
+                'file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
+                'movie_length' => 'required|numeric'
+            ]);
 
-        // Handle file upload if new file is provided
-        if ($request->hasFile('file')) {
-            // Delete old file
-            if ($movie->file) {
-                Storage::disk('s3')->delete($movie->file);
+            $movie = Movie::find($id);
+            if (is_null($movie)) {
+                return $this->sendError('Movie not found');
             }
 
-            // Upload new file
-            $file = $request->file('file');
-            $fileName = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('movies/posters', $fileName, 's3');
-            Storage::disk('s3')->setVisibility($path, 'public');
-            $movie->file = $path;
-        }
+            try {
+                // Handle file upload if new file is provided
+                if ($request->hasFile('file')) {
+                    \Log::info('Processing file upload for movie update');
+                    // Delete old file
+                    if ($movie->file) {
+                        Storage::disk('s3')->delete($movie->file);
+                    }
 
-        $movie->update([
-            'title' => $request->title ?? $movie->title,
-            'year' => $request->year ?? $movie->year,
-            'genre' => $request->genre ?? $movie->genre,
-            'movie_length' => $request->movie_length ?? $movie->movie_length
-        ]);
+                    // Upload new file
+                    $file = $request->file('file');
+                    $fileName = time() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs('movies/posters', $fileName, 's3');
+                    Storage::disk('s3')->setVisibility($path, 'public');
+                    $movie->file = $path;
+                }
 
-        if ($movie->file) {
-            $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
+                // Update the movie with new data
+                $movie->update([
+                    'title' => $request->title,
+                    'year' => (int)$request->year,
+                    'genre' => $request->genre,
+                    'movie_length' => (float)$request->movie_length
+                ]);
+
+                // Refresh the model to get the updated data
+                $movie->refresh();
+
+                if ($movie->file) {
+                    $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
+                }
+
+                return $this->sendResponse($movie, 'Movie updated successfully');
+
+            } catch (\Exception $e) {
+                \Log::error('Error updating movie:', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error updating movie: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error:', ['errors' => $e->errors()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Unexpected error:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred: ' . $e->getMessage()
+            ], 500);
         }
-        return $this->sendResponse($movie, 'Movie updated successfully');
     }
 
     public function destroy($id)
