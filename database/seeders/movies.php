@@ -31,14 +31,14 @@ class movies extends Seeder
             [
                 'title' => 'Nacho Libre',
                 'year' => 2004,
-                'genre' => 'Action',
+                'genre' => '/Action',
                 'file' => '/images/nacho_libre.jpeg',
                 'movie_length' => 200.00
             ],
             [
                 'title' => 'Interstellar',
                 'year' => 2014,
-                'genre' => 'Action',
+                'genre' => '/Action',
                 'file' => '/images/interstellar.jpeg',
                 'movie_length' => 200.00
             ],

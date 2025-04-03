@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Models\Movie;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class MovieController extends BaseController 
 {
@@ -23,20 +24,33 @@ class MovieController extends BaseController
 
     public function store(Request $request)
     {
-        try {
-            $request->validate([
+        $validator = Validator::make($request->all(), [
                 'title' => 'required|string',
                 'year' => 'required|integer',
                 'genre' => 'required|string',
-                'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg',
+                'file' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
                 'movie_length' => 'required|numeric'
             ]);
 
+            if($validator->fails()){
+                return $this->sendError('Validation Error.', $validator->errors());       
+            }
+
             // Handle file upload
-            $file = $request->file('file');
-            $fileName = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('movies/posters', $fileName, 's3');
-            Storage::disk('s3')->setVisibility($path, 'public');
+            $path = '';
+            if ($request->hasFile('file')) {
+                $extension  = request()->file('file')->getClientOriginalExtension(); //This is to get the extension of the image file just uploaded
+                $image_name = time() .'_movie_cover.' . $extension;
+                $path = $request->file('file')->storeAs(
+                    'images',
+                    $image_name,
+                    's3'
+                );
+                Storage::disk('s3')->setVisibility($path, "public");
+                if(!$path) {
+                    //return $this->sendError($path, 'Book cover failed to upload!');
+                }
+            }
 
             $movie = Movie::create([
                 'title' => $request->title,
@@ -51,15 +65,8 @@ class MovieController extends BaseController
             }
 
             return $this->sendResponse($movie, 'Movie created successfully');
-        } catch (\Exception $e) {
-            \Log::error('Movie creation error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error creating movie',
-                'errors' => $e instanceof \Illuminate\Validation\ValidationException ? $e->errors() : [$e->getMessage()]
-            ], 422);
-        }
-    }
+        } 
+
 
     public function show($id)
     {
@@ -87,7 +94,7 @@ class MovieController extends BaseController
                 'title' => 'required|string',
                 'year' => 'required|integer',
                 'genre' => 'required|string',
-                'file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
+                'file' => 'nullable',
                 'movie_length' => 'required|numeric'
             ]);
 
@@ -108,7 +115,7 @@ class MovieController extends BaseController
                     // Upload new file
                     $file = $request->file('file');
                     $fileName = time() . '_' . $file->getClientOriginalName();
-                    $path = $file->storeAs('movies/posters', $fileName, 's3');
+                    $path = $file->storeAs('/images', $fileName, 's3');
                     Storage::disk('s3')->setVisibility($path, 'public');
                     $movie->file = $path;
                 }
