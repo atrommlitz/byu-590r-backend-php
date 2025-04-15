@@ -14,6 +14,18 @@ class Movie extends Model
         'year',
         'genre',
         'file',
-        'movie_length'
+        'movie_length',
+        'director_id',
+        'rating_id'
     ];
+
+    public function director()
+    {
+        return $this->belongsTo(Director::class);
+    }
+
+    public function rating()
+    {
+        return $this->belongsTo(Rating::class);
+    }
 }

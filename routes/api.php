@@ -6,6 +6,8 @@ use App\Http\Controllers\API\RegisterController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\MovieController;
 use App\Http\Controllers\API\FileController;
+use App\Http\Controllers\API\RatingController;
+use App\Http\Controllers\API\DirectorController;
 
 // Public routes
 Route::controller(RegisterController::class)->group(function(): void{
@@ -33,4 +35,9 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // File routes
     Route::resource('files', FileController::class);
+
+    // Rating routes
+    Route::get('ratings', [RatingController::class, 'index']);
+    Route::get('directors', [DirectorController::class, 'index']);
+    Route::post('directors', [DirectorController::class, 'store']);
 });

@@ -11,7 +11,7 @@ class MovieController extends BaseController
 {
     public function index()
     {
-        $movies = Movie::all();
+        $movies = Movie::with(['director', 'rating'])->get();
         // Transform the movies to include full S3 URLs
         $movies->transform(function ($movie) {
             if ($movie->file) {
@@ -24,49 +24,65 @@ class MovieController extends BaseController
 
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        try {
+            \Log::info('Received movie creation request:', $request->all());
+            
+            $validator = Validator::make($request->all(), [
                 'title' => 'required|string',
                 'year' => 'required|integer',
                 'genre' => 'required|string',
-                'file' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
-                'movie_length' => 'required|numeric'
+                'movie_length' => 'required|numeric',
+                'director_id' => 'required|exists:directors,id',
+                'rating_id' => 'required|exists:ratings,id',
+                'file' => 'nullable|file|image|max:10240'
             ]);
 
-            if($validator->fails()){
-                return $this->sendError('Validation Error.', $validator->errors());       
+            if ($validator->fails()) {
+                \Log::error('Validation failed:', $validator->errors()->toArray());
+                return $this->sendError('Validation Error.', $validator->errors());
             }
 
-            // Handle file upload
-            $path = '';
+            $path = null;
             if ($request->hasFile('file')) {
-                $extension  = request()->file('file')->getClientOriginalExtension(); //This is to get the extension of the image file just uploaded
-                $image_name = time() .'_movie_cover.' . $extension;
-                $path = $request->file('file')->storeAs(
-                    'images',
-                    $image_name,
-                    's3'
-                );
-                Storage::disk('s3')->setVisibility($path, "public");
-                if(!$path) {
-                    //return $this->sendError($path, 'Book cover failed to upload!');
+                try {
+                    $file = $request->file('file');
+                    $fileName = time() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs('/images', $fileName, 's3');
+                    Storage::disk('s3')->setVisibility($path, 'public');
+                } catch (\Exception $e) {
+                    \Log::error('File upload error: ' . $e->getMessage());
+                    return $this->sendError('File upload failed: ' . $e->getMessage());
                 }
             }
 
-            $movie = Movie::create([
+            $movieData = [
                 'title' => $request->title,
                 'year' => (int)$request->year,
                 'genre' => $request->genre,
                 'movie_length' => (float)$request->movie_length,
-                'file' => $path
-            ]);
+                'director_id' => $request->director_id,
+                'rating_id' => $request->rating_id
+            ];
 
+            // Only add file path if we have one
+            if ($path) {
+                $movieData['file'] = $path;
+            }
+
+            $movie = Movie::create($movieData);
+
+            // If the movie has a file, get the temporary URL
             if ($movie->file) {
                 $movie->file = Storage::disk('s3')->temporaryUrl($movie->file, now()->addMinutes(5));
             }
 
-            return $this->sendResponse($movie, 'Movie created successfully');
-        } 
-
+            return $this->sendResponse($movie, 'Movie created successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Error creating movie: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return $this->sendError('Error creating movie: ' . $e->getMessage());
+        }
+    }
 
     public function show($id)
     {
@@ -95,7 +111,9 @@ class MovieController extends BaseController
                 'year' => 'required|integer',
                 'genre' => 'required|string',
                 'file' => 'nullable',
-                'movie_length' => 'required|numeric'
+                'movie_length' => 'required|numeric',
+                'director_id' => 'required|exists:directors,id',
+                'rating_id' => 'required|exists:ratings,id'
             ]);
 
             $movie = Movie::find($id);
@@ -125,7 +143,9 @@ class MovieController extends BaseController
                     'title' => $request->title,
                     'year' => (int)$request->year,
                     'genre' => $request->genre,
-                    'movie_length' => (float)$request->movie_length
+                    'movie_length' => (float)$request->movie_length,
+                    'director_id' => $request->director_id,
+                    'rating_id' => $request->rating_id
                 ]);
 
                 // Refresh the model to get the updated data

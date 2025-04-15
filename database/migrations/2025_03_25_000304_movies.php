@@ -12,21 +12,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::dropIfExists(table: 'movies');
-        Schema::create(table: 'movies', callback: function(Blueprint $table) {
-            //PK's
-            $table->id();
-            //FK's
-            // $table->integer('director_id');
-            // $table->integer('language_id');
-            // $table->integer('age_rating_id');
-            $table->string('title');
-            $table->integer('year');
-            $table->string('genre');
-            $table->string('file');
-            $table->float('movie_length');
-            $table->timestamps();
-        });
+            Schema::dropIfExists(table: 'movies');
+            Schema::create(table: 'movies', callback: function(Blueprint $table) {
+                $table->id();
+                $table->string('title');
+                $table->integer('year');
+                $table->string('genre');
+                $table->string('file')->nullable();
+                $table->float('movie_length');
+                $table->foreignId('director_id')->nullable()->constrained('directors')->onDelete('set null');
+                $table->foreignId('rating_id')->nullable()->constrained('ratings')->onDelete('set null');
+                $table->timestamps();
+            });
     }
 
     /**
