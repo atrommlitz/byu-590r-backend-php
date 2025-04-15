@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Models\movie;
+use App\Models\Movie;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
-class movies extends Seeder
+class MovieSeeder extends Seeder
 {
     /**
      * Run the database seeds.
